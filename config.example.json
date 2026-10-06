@@ -1,0 +1,9 @@
+{
+  "timeout": 300,
+  "hosts": {
+    "user@ubuntu-host": {
+      "target": "user@ubuntu-host",
+      "format": "auto"
+    }
+  }
+}

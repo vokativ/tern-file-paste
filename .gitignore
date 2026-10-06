@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+tern.d.luau
+config.json
+.dev/
+.DS_Store

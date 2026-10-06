@@ -1,0 +1,51 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Full-history commit email privacy
+        run: python tools/check_commit_privacy.py --all
+      - name: Install isolated Linux clipboard tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xclip xvfb xauth sway wl-clipboard
+      - name: Clipboard and transfer regression tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Download Luau interpreter
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUNNER_OS" in
+            macOS) asset=luau-macos.zip ;;
+            Linux) asset=luau-ubuntu.zip ;;
+            Windows) asset=luau-windows.zip ;;
+          esac
+          gh release download 0.741 --repo luau-lang/luau --pattern "$asset" --dir .dev
+          python -c "import zipfile; zipfile.ZipFile('.dev/$asset').extractall('.dev/luau')"
+      - name: Pane routing and insertion regression tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            .dev/luau/luau.exe tests/workflow.luau
+          else
+            chmod +x .dev/luau/luau
+            .dev/luau/luau tests/workflow.luau
+          fi

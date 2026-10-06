@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+if command -v py >/dev/null 2>&1; then
+    exec py -3 "$root/tools/check_commit_privacy.py" "$@"
+elif command -v python3 >/dev/null 2>&1; then
+    exec python3 "$root/tools/check_commit_privacy.py" "$@"
+else
+    exec python "$root/tools/check_commit_privacy.py" "$@"
+fi
