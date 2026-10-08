@@ -5,9 +5,13 @@ Copy files in your desktop file manager, focus a remote [Tern](https://stencil.s
 | Client | Shortcut |
 | --- | --- |
 | macOS | Command + Option + Shift + V |
-| Linux / Windows | Ctrl + Alt + Shift + V |
+| Linux / Windows | Ctrl + Shift + F8 |
 
-The command palette action is **Paste local files to remote** (`plugin.file-paste.paste`). Normal paste is not overridden. Copy alone does not upload anything, and the plugin never presses Enter or submits a prompt.
+The command palette actions are:
+- **Paste local files to remote** (`plugin.file-paste.paste`) — uploads clipboard files and inserts remote paths.
+- **Remote File Paste: Open keyboard settings** (`plugin.file-paste.configure`) — opens Tern's native Preferences page (`07 · Keyboard`) to customize or remove shortcuts.
+
+Normal paste is not overridden. Copy alone does not upload anything, and the plugin never presses Enter or submits a prompt.
 
 **Confirmed workflow:** copy an image **file** in Finder, focus OMP on Ubuntu through Tern, and press **Command + Option + Shift + V**. The complete file uploads and its remote reference is inserted into the composer. This is separate from copying image pixels in a browser/viewer: image-only clipboard paste is not handled by this plugin.
 
@@ -26,9 +30,9 @@ You need **Python 3.10+**, the **OpenSSH client**, a working noninteractive SSH 
 | Verification | Status |
 | --- | --- |
 | macOS → Ubuntu, copied image file → remote OMP | Confirmed in actual use |
+| Linux (Omarchy / Wayland) → Ubuntu, binary / JPEG / empty files | Confirmed in actual use |
 | Binary, empty, duplicate-name and Unicode files → Ubuntu | Transfer integrity and permissions verified |
 | macOS / Ubuntu / Windows CI | Passing, including native Windows and isolated X11/Wayland clipboard checks |
-| Interactive Tern on Linux / Windows | Not yet device-tested |
 
 
 ## How it works
@@ -114,12 +118,36 @@ Python defaults to `["python3"]` on macOS/Linux and `["py", "-3"]` on Windows. I
 
 On Windows an installation without `py` can use `"python": ["python"]` or the full executable path. Do not include credentials in configuration; OpenSSH manages authentication.
 
-Configuration is read for each invocation. It is kept outside the repository and never uploaded to the remote host. To change the shortcut, use Tern's user `keybinds` setting, for example:
+Configuration is read for each invocation. It is kept outside the repository and never uploaded to the remote host.
 
+### Keyboard shortcuts & collision avoidance
+
+The default shortcuts are:
+- **macOS:** `Command + Option + Shift + V` (`cmd+alt+shift+v`).
+- **Linux / Windows:** `Ctrl + Shift + F8` (`ctrl+shift+f8`).
+
+#### Why Ctrl + Shift + F8 on Linux and Windows
+Chords combining `Alt + Shift` with a letter (such as `Ctrl + Alt + Shift + V`) are prone to system-level conflicts:
+- On Linux (Ubuntu, Fedora, Kubuntu, Omarchy / Hyprland), `Alt + Shift` is a widespread system shortcut for switching keyboard layouts (e.g. XKB `grp:alt_shift_toggle` or desktop input source switchers). The compositor or input layer intercepts `Alt + Shift` immediately, toggling the layout so the subsequent letter key is received as a different keysym or dropped.
+- On Windows with multiple input languages, `Left Alt + Left Shift` is the legacy default layout toggle. Furthermore, on European and international Windows layouts, `Ctrl + Alt` synthesizes `AltGr`, modifying letter keys into special symbols.
+- `Ctrl + Shift + F8` avoids the `Alt` key entirely, avoids `Super`/`Win`, and uses a physical function key that remains invariant across all keyboard layouts.
+
+#### Command palette fallback
+Regardless of your active keyboard layout or desktop environment, the command palette (`Ctrl + Shift + P` / `Cmd + Shift + P` → **"Paste local files to remote"**) is always available with zero risk of collision.
+
+#### Customizing or unbinding shortcuts
+You can customize or remove the shortcut at any time:
+1. **Via Tern GUI:** Open the palette (`Ctrl+Shift+P`) and choose **"Remote File Paste: Open keyboard settings"** (or press `Ctrl+,` and select **07 · Keyboard**). Search for `file-paste` and record your preferred shortcut or click `×` to remove.
+2. **Via settings.json:** Add an override in Tern's user `keybinds` setting (`~/.config/tern/settings.json`):
 ```json
-{"keybinds": {"cmd+alt+v": "plugin.file-paste.paste"}}
+{
+  "keybinds": {
+    "ctrl+shift+f8": "plugin.file-paste.paste",
+    "ctrl+alt+shift+v": []
+  }
+}
 ```
-
+An empty array `[]` leaves the chord unbound.
 ## Use
 
 1. Select one or more **regular files** in Finder, your Linux file manager, or Explorer and Copy.

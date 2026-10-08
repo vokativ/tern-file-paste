@@ -1,6 +1,7 @@
 --!strict
 local workflow = require("./workflow")
 local config_path = tern.plugin.data .. "/config.json"
+local NOTICE_KEY = "file_paste_notice_v1"
 local busy = false
 
 local function remote_destination(cx: WindowCx): (ManagedHost?, PaneInfo?)
@@ -20,7 +21,7 @@ local function remote_destination(cx: WindowCx): (ManagedHost?, PaneInfo?)
 end
 
 local function configuration(host: ManagedHost): (any, { string }, string)
-	assert(tern.fs.exists(config_path), "Configure this plugin at " .. config_path .. " using config.example.json")
+	assert(tern.fs.exists(config_path), "Configure this plugin at " .. config_path .. " using config.example.json before pasting")
 	local config = tern.json.decode(tern.fs.read(config_path, 65536))
 	assert(type(config) == "table" and type(config.hosts) == "table", "Configuration needs a hosts object")
 	local entry = config.hosts[host.address or ""] or config.hosts[host.name]
@@ -92,7 +93,10 @@ local function upload(cx: WindowCx)
 					return
 				end
 				fresh:run(destination.pane, text)
-				fresh:toast("success", "Pasted " .. tostring(#response.paths) .. " remote file reference(s)", "Uploaded to " .. host.name .. "; press Enter yourself when ready")
+				local size_mb = if response.bytes and type(response.bytes) == "number" and response.bytes > 0
+					then string.format(" (%.1f MB)", response.bytes / (1024 * 1024))
+					else ""
+				fresh:toast("success", "Pasted " .. tostring(#response.paths) .. " remote file reference(s)" .. size_mb, "Uploaded to " .. host.name .. "; press Enter yourself when ready")
 			end)
 			if not applied then
 				fresh:toast("error", "Files uploaded, but not pasted", tostring(detail))
@@ -109,7 +113,7 @@ tern.command({
 	id = "paste",
 	title = "Paste local files to remote",
 	icon = "files",
-	keys = { if tern.runtime.os == "macos" then "cmd+alt+shift+v" else "ctrl+alt+shift+v" },
+	keys = { if tern.runtime.os == "macos" then "cmd+alt+shift+v" else "ctrl+shift+f8" },
 	run = function(cx: WindowCx)
 		local ok, failure = pcall(upload, cx)
 		if not ok then
@@ -117,3 +121,26 @@ tern.command({
 		end
 	end,
 })
+
+tern.command({
+	id = "configure",
+	title = "Remote File Paste: Open keyboard settings",
+	icon = "settings",
+	run = function(cx: WindowCx)
+		cx:command("preferences")
+		cx:toast("info", "Select 07 · Keyboard", "Search for 'file-paste' to customize or remove shortcuts")
+	end,
+})
+
+tern.on("window_start", function(cx: WindowCx)
+	if tern.kv.get(NOTICE_KEY) then
+		return
+	end
+	tern.kv.set(NOTICE_KEY, true)
+	local chord = if tern.runtime.os == "macos" then "Command + Option + Shift + V" else "Ctrl + Shift + F8"
+	cx:toast(
+		"info",
+		"Remote File Paste ready",
+		"Default shortcut: " .. chord .. " · Rebind in Preferences → Keyboard or run via Command Palette"
+	)
+end)

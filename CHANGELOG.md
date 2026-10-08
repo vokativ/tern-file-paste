@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0
+
+- Changed default Linux and Windows shortcut from `Ctrl + Alt + Shift + V` to `Ctrl + Shift + F8` to prevent collisions with system-level `Alt + Shift` keyboard layout toggles and international Windows `AltGr` chords.
+- Added companion command `Remote File Paste: Open keyboard settings` (`plugin.file-paste.configure`) to jump directly to Tern's native Preferences page (`07 · Keyboard`).
+- Added non-intrusive first-run notification toast on `window_start` introducing the shortcut and configuration options without stealing focus.
+- Added total upload data size feedback in the paste completion toast.
+- Added comprehensive documentation on cross-platform shortcut collisions, Command Palette zero-conflict usage, and user `keybinds` configuration.
+- Confirmed interactive Wayland file-manager clipboard transfer and remote SHA-256 verification on Omarchy Linux.
+
 ## 0.1.0
 
 - Added a separate Tern shortcut for copying regular files from macOS, Linux Wayland/X11, and Windows clipboards to Ubuntu over SSH.
