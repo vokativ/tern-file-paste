@@ -8,7 +8,8 @@
 - Show focus-preserving source-bytes/total progress and SSH phases in a temporary native panel, with wrapped diagnostics and an explicit Copy references recovery action.
 - Close the panel immediately after the insertion call succeeds, with no success notification or retained success status. Errors remain accessible through Upload status.
 - Recheck the original destination, wait up to 10 seconds for native composer readiness, and dispatch input once without submitting Enter or awaiting a later surface echo.
-- Add progress, deadline/rollback, cold-package launch and composer-readiness regressions. The updated desktop workflow is device-tested on Omarchy/Wayland; macOS and Windows GUI verification remains pending.
+- Add progress, deadline/rollback, cold-package launch and composer-readiness regressions. Device-tested on Omarchy/Wayland and on macOS for clipboard-to-remote-shell insertion, focus preservation, quiet dismissal and remote file integrity. The user also confirmed the updated macOS workflow in a new remote OMP tab: uploaded references are inserted, and images are processed after prompt submission, as on Linux. Windows GUI verification remains pending.
+- Add private native AppKit pasteboard regressions for multi-file selections, preview precedence, Unicode/escaped names, non-consuming reads and rejection of text/image-only or web-URL clipboards.
 
 ## 0.2.0
 

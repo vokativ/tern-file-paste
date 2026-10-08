@@ -171,6 +171,8 @@ class CommandFailureTests(unittest.TestCase):
 
 @unittest.skipUnless(sys.platform == "darwin", "JXA/AppKit is available only on macOS")
 class MacNativeScriptTests(unittest.TestCase):
+    pixel_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a8ioAAAAASUVORK5CYII="
+
     def run_fixture(self, uris):
         # Exercise the shipped script and actual AppKit NSURL/NSArray bridging.
         # Substitute only the pasteboard so the user's clipboard is untouched.
@@ -203,6 +205,69 @@ function run() {
         for uri in ("https://example.com/a", "file://remote/tmp/a", "file:///tmp/a?query", "file:///tmp/a#fragment"):
             with self.subTest(uri=uri), self.assertRaises(clipboard.ClipboardError):
                 self.run_fixture([uri])
+
+    def run_pasteboard_fixture(self, items):
+        # A private pasteboard exercises native format negotiation without
+        # touching the general clipboard or needing a desktop CI session.
+        source = (clipboard._SCRIPTS / "macos_files.js").read_text(encoding="utf-8")
+        harness = """
+ObjC.import('AppKit');
+function run() {
+    var pasteboard = $.NSPasteboard.pasteboardWithUniqueName;
+    try {
+        var selection = $.NSMutableArray.alloc.init;
+        INPUT.forEach(function (formats) {
+            var item = $.NSPasteboardItem.alloc.init;
+            Object.keys(formats).forEach(function (type) {
+                var value = formats[type];
+                if (type === 'public.png') {
+                    item.setDataForType($.NSData.alloc.initWithBase64EncodedStringOptions(value, 0), type);
+                } else {
+                    item.setStringForType(value, type);
+                }
+            });
+            selection.addObject(item);
+        });
+        if (selection.count > 0 && !pasteboard.writeObjects(selection)) {
+            throw new Error('Could not populate the private clipboard');
+        }
+        var bridge = {
+            NSArray: $.NSArray, NSURL: $.NSURL, NSDictionary: $.NSDictionary,
+            NSNumber: $.NSNumber,
+            NSPasteboardURLReadingFileURLsOnlyKey: $.NSPasteboardURLReadingFileURLsOnlyKey,
+            NSPasteboard: {generalPasteboard: pasteboard}
+        };
+        var read = new Function('ObjC', '$', SOURCE + '\\nreturn run();');
+        var result = read(ObjC, bridge);
+        if (read(ObjC, bridge) !== result) {
+            throw new Error('Reading the file selection consumed clipboard data');
+        }
+        return result;
+    } finally {
+        pasteboard.releaseGlobally;
+    }
+}
+""".replace("INPUT", json.dumps(items)).replace("SOURCE", json.dumps(source))
+        return clipboard._native_json(clipboard._command(["osascript", "-l", "JavaScript", "-e", harness]))
+
+    def test_native_file_items_ignore_previews_and_preserve_selection(self):
+        items = [
+            {"public.file-url": "file:///tmp/first/same%20%E6%96%87.png", "public.utf8-plain-text": "icon name", "public.png": self.pixel_png},
+            {"public.file-url": "file:///tmp/second/same%20%E6%96%87.png"},
+            {"public.file-url": "file:///tmp/empty%20file.txt"},
+            {"public.file-url": "file:///tmp/100%25%20%23%3F.png"},
+            {"public.file-url": "file:///tmp/first/same%20%E6%96%87.png"},
+        ]
+        self.assertEqual(self.run_pasteboard_fixture(items), [
+            "/tmp/first/same 文.png", "/tmp/second/same 文.png",
+            "/tmp/empty file.txt", "/tmp/100% #?.png",
+        ])
+
+    def test_native_empty_text_image_and_web_url_are_not_files(self):
+        for items in ([], [{"public.utf8-plain-text": "/tmp/not-a-copied-file.png"}],
+                      [{"public.png": self.pixel_png}], [{"public.url": "https://example.com/file.png"}]):
+            with self.subTest(items=items):
+                self.assertEqual(self.run_pasteboard_fixture(items), [])
 
 
 @unittest.skipUnless(sys.platform == "win32", "Windows PowerShell/Forms is available only on Windows")

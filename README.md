@@ -13,7 +13,7 @@ The command palette actions are:
 
 Normal paste is not overridden. Copy alone does not upload anything, and the plugin never presses Enter or submits a prompt.
 
-**Earlier macOS workflow, confirmed in actual use before 0.3:** copy an image **file** in Finder, focus OMP on Ubuntu through Tern, and press **Command + Option + Shift + V**. The updated 0.3 progress panel and composer-readiness path is device-tested on Omarchy, not yet on macOS or Windows. Image-only clipboard paste is not handled by this plugin.
+**macOS workflow, confirmed in actual use:** copy an image **file** in Finder, focus OMP on Ubuntu through Tern, and press **Command + Option + Shift + V**. Version 0.3.2 is user-verified in a new remote OMP tab: the plugin inserts the uploaded file reference, and OMP processes the image after you submit the prompt with Enter, just as on Linux. An immediate image preview on paste is not required. Image-only clipboard paste is not handled by this plugin.
 
 ## Quick start
 
@@ -29,7 +29,8 @@ You need **Python 3.10+**, the **OpenSSH client**, a working noninteractive SSH 
 
 | Verification | Status |
 | --- | --- |
-| macOS → Ubuntu, copied image file → remote OMP | Earlier pre-0.3 workflow confirmed; updated 0.3 GUI path not yet device-tested |
+| macOS → Ubuntu, native file clipboard → remote shell | 0.3.2 shortcut, insertion without Enter, focus preservation, panel dismissal and remote SHA-256 verified |
+| macOS → Ubuntu, copied image file → remote OMP | 0.3.2 confirmed by the user in a new remote OMP tab; image processed after prompt submission |
 | Linux (Omarchy / Wayland) → Ubuntu, binary / JPEG / empty files | Confirmed in actual use |
 | Binary, empty, duplicate-name and Unicode files → Ubuntu | Transfer integrity and permissions verified |
 | macOS / Ubuntu / Windows CI | Clipboard/transfer checks run in [GitHub Actions](https://github.com/vokativ/tern-file-paste/actions/workflows/check.yml); this is not desktop GUI verification |
@@ -162,6 +163,8 @@ An empty array `[]` leaves the chord unbound. Merge these entries into your exis
 3. Press the plugin shortcut or choose its palette command.
 4. Watch the temporary **File upload** panel. After upload completes and the insertion call succeeds, it closes immediately; only the remote reference remains in the original input. Submit your prompt yourself.
 
+OMP receives a file reference, not an immediate image attachment preview. The image is processed after you submit the prompt with Enter; this is expected on macOS and Linux.
+
 Files are stored in `~/.cache/tern-file-paste/upload-<unique-id>/` on Ubuntu, in separate numbered directories. Duplicate basenames do not overwrite one another. Directories are private (`0700`) and files are owner-only (`0600`). Contents are preserved, but executable permissions, extended attributes, resource forks, and other metadata are not copied.
 
 Normal spaces/Unicode are retained. Quotes, control characters, and non-UTF-8 filename bytes are percent-encoded in the uploaded basename so the result can be represented safely in a prompt. Originals are never renamed or deleted; a file-manager Cut selection is treated as Copy.
@@ -197,9 +200,11 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 luau tests/workflow.luau
 ```
 
-Regression tests cover clipboard format precedence, URI decoding, errors, filename collisions, binary/empty files, permissions, progress, cold-package launches, rollback, total deadlines, quoting, composer readiness and stale destination safety. Ordinary local tests do not change the user's clipboard or contact a remote host. CI runs on macOS, Ubuntu, and Windows; isolated CI checks exercise actual X11/Wayland clipboard tools and Windows file-drop lists. The simulated remote-shell transfer tests require POSIX and therefore skip on Windows.
+Regression tests cover clipboard format precedence, URI decoding, errors, filename collisions, binary/empty files, permissions, progress, cold-package launches, rollback, total deadlines, quoting, composer readiness and stale destination safety. Ordinary local tests do not change the user's clipboard or contact a remote host. macOS checks exercise the shipped reader against private native AppKit pasteboards, including multi-file selections, image previews, Unicode/escaped names, repeated reads and text/image-only rejection. CI runs on macOS, Ubuntu, and Windows; isolated CI checks exercise actual X11/Wayland clipboard tools and Windows file-drop lists. The simulated remote-shell transfer tests require POSIX and therefore skip on Windows.
 
-The original pre-0.3 macOS smoke verified clipboard uploads and Ubuntu file integrity. The updated 0.3 desktop workflow was exercised on Omarchy/Wayland, including native OMP insertion, progress, quiet successful dismissal and first-use bytecode-triggered reload failure. Progress, cold-start and composer-readiness regressions run locally. Updated macOS and Windows GUI paths still need device-level verification. No passing Luau-LSP static-typecheck claim is made.
+Version 0.3.2 was exercised on macOS with Tern 0.6.2: the default shortcut uploaded a binary file from the native clipboard, inserted a quoted path into an isolated remote shell without Enter, preserved focus and dismissed the panel. A separate real SSH transfer verified binary, PNG, empty, duplicate-name and Unicode files by SHA-256, with `0600` files and `0700` directories.
+
+An automated native OMP attempt timed out with blank agent/status surfaces. Subsequent user device verification in a new remote OMP tab confirmed that the macOS workflow works end to end: the uploaded reference is inserted, and OMP processes the image after prompt submission, as on Linux. The automated attempt does not establish a remote-version incompatibility or a need to upgrade the remote service. Omarchy/Wayland verification includes native OMP insertion, progress, quiet dismissal and the first-use bytecode-triggered reload fix. Windows GUI verification remains pending. No passing Luau-LSP static-typecheck claim is made.
 
 ## Commit email privacy
 
