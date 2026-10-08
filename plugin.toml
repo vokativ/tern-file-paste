@@ -1,6 +1,6 @@
 schema = 1
 id = "file-paste"
 name = "Remote File Paste"
-version = "0.2.0"
+version = "0.3.2"
 description = "Copy local files and paste uploaded paths into remote Tern panes."
 window = "window.luau"

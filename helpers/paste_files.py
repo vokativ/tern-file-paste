@@ -4,15 +4,30 @@
 import json
 import sys
 
+# Tern watches this package and reloads window VMs on any write, including pyc
+# caches. Set this before local imports so the first upload cannot reload its VM.
+sys.dont_write_bytecode = True
+
 from clipboard import ClipboardError, read_files
-from transfer import TransferError, upload_files
+from transfer import ProgressFile, TransferError, upload_files
 
 
 def main() -> int:
+    writer = None
+    snapshot = {"phase": "reading", "sent": 0, "total": 0, "files": 0, "file_index": 0}
+
+    def report(update):
+        snapshot.update(update)
+        if writer is not None:
+            writer(snapshot)
+
     try:
         request = json.load(sys.stdin)
         if not isinstance(request, dict):
             raise ValueError("Expected a JSON configuration object on stdin")
+        if request.get("progress_file") is not None:
+            writer = ProgressFile(request["progress_file"])
+            report(snapshot)
         target = request.get("target")
         if not isinstance(target, str) or not target:
             raise ValueError("Configure an SSH target for this Tern host")
@@ -28,10 +43,14 @@ def main() -> int:
         paths = read_files()
         if not paths:
             raise ClipboardError("No copied files in the clipboard. Copy files in your file manager first; text and image-only clipboards are not uploaded.")
-        result = upload_files(paths, target, port=port, identity_file=identity_file, timeout=timeout)
+        result = upload_files(
+            paths, target, port=port, identity_file=identity_file, timeout=timeout,
+            progress=report if writer is not None else None,
+        )
         print(json.dumps(result))
         return 0
     except (ClipboardError, TransferError, ValueError, OSError) as error:
+        report({"phase": "failed", "error": str(error)})
         print(str(error), file=sys.stderr)
         return 1
 

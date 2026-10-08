@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+import json
 import os
 import re
 import shlex
@@ -9,6 +11,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import tempfile
 import time
 import unicodedata
 import uuid
@@ -19,6 +22,58 @@ class TransferError(Exception):
 
 
 _TARGET = re.compile(r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?[A-Za-z0-9_][A-Za-z0-9_.-]*\Z")
+
+
+class ProgressFile:
+    """Publish advisory, owner-only snapshots without touching helper stdout."""
+
+    def __init__(self, path: str):
+        if not isinstance(path, str) or not os.path.isabs(path) or "\0" in path:
+            raise ValueError("progress_file must be an absolute local path")
+        self.path = path
+
+    def __call__(self, snapshot: dict) -> None:
+        if "error" in snapshot:
+            # Even escaped Unicode diagnostics fit the window's 8192-byte read.
+            snapshot = dict(snapshot, error=snapshot["error"][:512])
+        temporary = None
+        try:
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=".upload-progress-", dir=os.path.dirname(self.path),
+            )
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                json.dump(snapshot, stream, separators=(",", ":"), ensure_ascii=True)
+            os.replace(temporary, self.path)
+        except OSError:
+            # Status is advisory. An unavailable panel must not abort or repeat
+            # an upload, and the window still receives the completion response.
+            pass
+        finally:
+            if temporary is not None:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+
+
+class _Progress:
+    def __init__(self, callback: Callable[[dict], None] | None):
+        self.callback = callback
+        self.snapshot = {"phase": "reading", "sent": 0, "total": 0, "files": 0, "file_index": 0}
+
+    def emit(self, phase: str, **fields) -> None:
+        self.snapshot.update(fields, phase=phase)
+        if self.callback is not None:
+            self.callback(dict(self.snapshot))
+
+    def consumed(self, stream, completed: int, size: int) -> None:
+        # SSH inherits this open-file description. Seeking by zero only
+        # observes its shared read offset; Python never reads/copies the payload.
+        offset = min(size, os.lseek(stream.fileno(), 0, os.SEEK_CUR))
+        self.emit(
+            "finalizing" if offset == size else "uploading",
+            sent=max(self.snapshot["sent"], completed + offset),
+        )
 
 
 def _basename(name: str) -> str:
@@ -32,6 +87,7 @@ def _basename(name: str) -> str:
 
 def _run(
     argv: list[str], deadline: float, description: str, *, stdin=None,
+    progress: Callable[[], None] | None = None,
 ) -> bytes:
     remaining = deadline - time.monotonic()
     if remaining <= 0:
@@ -47,8 +103,24 @@ def _run(
     except OSError as exc:
         raise TransferError(f"Cannot start {argv[0]} while {description}: {exc}") from exc
     try:
-        stdout, stderr = process.communicate(timeout=remaining)
-    except subprocess.TimeoutExpired as exc:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(argv, 0)
+            try:
+                stdout, stderr = process.communicate(
+                    timeout=min(remaining, 0.25) if progress is not None else remaining,
+                )
+            except subprocess.TimeoutExpired:
+                if progress is not None:
+                    progress()
+                if time.monotonic() >= deadline:
+                    raise
+            else:
+                if progress is not None:
+                    progress()
+                break
+    except BaseException as exc:
         # Terminate ssh and any local child processes, including proxy commands.
         if os.name == "nt":
             try:
@@ -71,7 +143,9 @@ def _run(
         process.stdout.close()
         process.stderr.close()
         process.wait()
-        raise TransferError(f"Upload timed out while {description}") from exc
+        if isinstance(exc, subprocess.TimeoutExpired):
+            raise TransferError(f"Upload timed out while {description}") from exc
+        raise
     if process.returncode:
         detail = stderr.decode("utf-8", errors="replace").strip()
         raise TransferError(
@@ -84,12 +158,31 @@ def _run(
 def upload_files(
     paths: list[str], target: str, *, port: int | None = None,
     identity_file: str | None = None, timeout: int = 300,
+    progress: Callable[[dict], None] | None = None,
 ) -> dict:
     """Stream complete files over SSH, rolling back this operation on failure.
 
     Authentication and host-key trust must already be configured in OpenSSH.
     A small part of the total timeout is reserved for failure cleanup.
+    Optional progress receives small snapshots; sent measures source bytes read
+    by SSH, not remote receipt. Only successful SSH exits produce phase done.
     """
+    status = _Progress(progress)
+    status.emit("reading")
+    try:
+        return _upload_files(
+            paths, target, port=port, identity_file=identity_file, timeout=timeout,
+            status=status,
+        )
+    except (TransferError, OSError, ValueError) as exc:
+        status.emit("failed", error=str(exc))
+        raise
+
+
+def _upload_files(
+    paths: list[str], target: str, *, port: int | None,
+    identity_file: str | None, timeout: int, status: _Progress,
+) -> dict:
     started = time.monotonic()
     if not isinstance(target, str) or not _TARGET.fullmatch(target):
         raise TransferError("Target must be an SSH alias or user@hostname, not a URL, address:port, or QUIC address")
@@ -100,7 +193,7 @@ def upload_files(
     if not isinstance(paths, list):
         raise TransferError("File paths must be a list")
 
-    files: list[tuple[str, str]] = []
+    files: list[tuple[str, str, int]] = []
     seen: set[str] = set()
     total = 0
     for path in paths:
@@ -122,7 +215,7 @@ def upload_files(
                 pass
         except OSError as exc:
             raise TransferError(f"Cannot open file {path!r}: {exc}") from exc
-        files.append((source, _basename(os.path.basename(source))))
+        files.append((source, _basename(os.path.basename(source)), info.st_size))
         seen.add(source)
         total += info.st_size
 
@@ -132,7 +225,9 @@ def upload_files(
         identity_file = os.path.abspath(os.path.expanduser(identity_file))
         if not os.path.isfile(identity_file):
             raise TransferError(f"SSH identity file does not exist or is not a regular file: {identity_file!r}")
+    status.emit("reading", total=total, files=len(files))
     if not files:
+        status.emit("done")
         return {"paths": [], "directory": "", "bytes": 0}
 
     ssh = shutil.which("ssh")
@@ -170,6 +265,7 @@ def upload_files(
         'elif [ -e "$root" ]; then echo "Upload directory ownership could not be verified" >&2; exit 1; fi'
     )
     try:
+        status.emit("connecting")
         output = _run([*ssh_args, target, setup], work_deadline, "creating upload directory")
         if not output.endswith(b"\0") or output.count(b"\0") != 1:
             raise TransferError("SSH returned an invalid upload directory response")
@@ -180,7 +276,8 @@ def upload_files(
         if not directory.startswith("/") or not directory.endswith("/" + relative_root):
             raise TransferError("SSH returned an unexpected upload directory")
         remote_paths: list[str] = []
-        for index, (source, name) in enumerate(files):
+        for index, (source, name, size) in enumerate(files):
+            status.emit("connecting", file_index=index + 1)
             subdirectory = f"{directory}/{index:06d}"
             remote_path = f"{subdirectory}/{name}"
             _run(
@@ -191,13 +288,20 @@ def upload_files(
             # into Python memory and the legacy SCP filename/newline protocol.
             # It also works with Windows OpenSSH versions predating SFTP scp.
             with open(source, "rb") as stream:
+                completed = status.snapshot["sent"]
+                status.consumed(stream, completed, size)
                 _run(
                     [*ssh_args, target,
                      f"umask 077; cat > {shlex.quote(remote_path)}"],
                     work_deadline, f"uploading {os.path.basename(source)!r}",
                     stdin=stream,
+                    progress=(
+                        (lambda: status.consumed(stream, completed, size))
+                        if status.callback is not None else None
+                    ),
                 )
             remote_paths.append(remote_path)
+        status.emit("done")
         return {"paths": remote_paths, "directory": directory, "bytes": total}
     except (TransferError, OSError, ValueError) as exc:
         try:

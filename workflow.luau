@@ -46,6 +46,51 @@ function workflow.same_destination(destination: Destination, host: ManagedHost?,
 		and agent == destination.agent
 end
 
+-- Native agent surfaces can be absent while their composer is bootstrapping.
+-- Do not depend on an OMP-specific node id: all sendable editors use this shape.
+function workflow.composer(surface: SurfaceTree | string | nil): TspNode?
+	if type(surface) ~= "table" then
+		return nil
+	end
+	local fallback: TspNode? = nil
+	local function visit(node: TspNode?): TspNode?
+		if node == nil then
+			return nil
+		end
+		local props = node.p
+		if node.k == "editor" and props ~= nil and type(props.sendable) == "boolean" and type(props.text) == "string" then
+			if props.sendable then
+				return node
+			end
+			fallback = fallback or node
+		end
+		for _, child in node.c or {} do
+			local found = visit(child)
+			if found ~= nil then
+				return found
+			end
+		end
+		return nil
+	end
+	return visit(surface.main) or visit(surface.dock) or visit(surface.layer) or fallback
+end
+
+
+-- A changed destination always wins; only a ready original composer permits insertion.
+function workflow.insertion_state(
+	destination: Destination,
+	host: ManagedHost?,
+	pane: PaneInfo?,
+	agent: boolean,
+	surface: SurfaceTree | string | nil
+): string
+	if not workflow.same_destination(destination, host, pane, agent) then
+		return "changed"
+	end
+	local composer = workflow.composer(surface)
+	return if composer ~= nil and composer.p ~= nil and composer.p.sendable == true then "ready" else "waiting"
+end
+
 function workflow.format_paths(paths: { string }, mode: string): string
 	local formatted = {}
 	for _, path in paths do
