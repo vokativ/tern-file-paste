@@ -15,6 +15,8 @@ Normal paste is not overridden. Copy alone does not upload anything, and the plu
 
 **macOS workflow, confirmed in actual use:** copy an image **file** in Finder, focus OMP on Ubuntu through Tern, and press **Command + Option + Shift + V**. Version 0.3.2 is user-verified in a new remote OMP tab: the plugin inserts the uploaded file reference, and OMP processes the image after you submit the prompt with Enter, just as on Linux. An immediate image preview on paste is not required. Image-only clipboard paste is not handled by this plugin.
 
+**Windows 11 workflow, desktop-verified:** with clipboard files selected, focus remote OMP and press **Ctrl + ;**. Version 0.3.2 inserts the uploaded `@"/remote/path"` reference without submitting the draft and dismisses the upload panel. Submit with Enter yourself; OMP then reads and interprets the image. No plugin code change was needed for the Windows verification.
+
 ## Quick start
 
 Install on the **client computer running the Tern window**, not on Ubuntu:
@@ -32,6 +34,7 @@ You need **Python 3.10+**, the **OpenSSH client**, a working noninteractive SSH 
 | macOS → Ubuntu, native file clipboard → remote shell | 0.3.2 shortcut, insertion without Enter, focus preservation, panel dismissal and remote SHA-256 verified |
 | macOS → Ubuntu, copied image file → remote OMP | 0.3.2 confirmed by the user in a new remote OMP tab; image processed after prompt submission |
 | Linux (Omarchy / Wayland) → Ubuntu, binary / JPEG / empty files | Confirmed in actual use |
+| Windows 11 → Ubuntu, native file clipboard → remote OMP | 0.3.2 Ctrl+semicolon, unsubmitted reference insertion, panel dismissal, matching SHA-256 and image interpretation after explicit submission verified |
 | Binary, empty, duplicate-name and Unicode files → Ubuntu | Transfer integrity and permissions verified |
 | macOS / Ubuntu / Windows CI | Clipboard/transfer checks run in [GitHub Actions](https://github.com/vokativ/tern-file-paste/actions/workflows/check.yml); this is not desktop GUI verification |
 
@@ -163,7 +166,7 @@ An empty array `[]` leaves the chord unbound. Merge these entries into your exis
 3. Press the plugin shortcut or choose its palette command.
 4. Watch the temporary **File upload** panel. After upload completes and the insertion call succeeds, it closes immediately; only the remote reference remains in the original input. Submit your prompt yourself.
 
-OMP receives a file reference, not an immediate image attachment preview. The image is processed after you submit the prompt with Enter; this is expected on macOS and Linux.
+OMP receives a file reference, not an immediate image attachment preview. The image is processed after you submit the prompt with Enter; this is expected on macOS, Linux, and Windows.
 
 Files are stored in `~/.cache/tern-file-paste/upload-<unique-id>/` on Ubuntu, in separate numbered directories. Duplicate basenames do not overwrite one another. Directories are private (`0700`) and files are owner-only (`0600`). Contents are preserved, but executable permissions, extended attributes, resource forks, and other metadata are not copied.
 
@@ -204,7 +207,9 @@ Regression tests cover clipboard format precedence, URI decoding, errors, filena
 
 Version 0.3.2 was exercised on macOS with Tern 0.6.2: the default shortcut uploaded a binary file from the native clipboard, inserted a quoted path into an isolated remote shell without Enter, preserved focus and dismissed the panel. A separate real SSH transfer verified binary, PNG, empty, duplicate-name and Unicode files by SHA-256, with `0600` files and `0700` directories.
 
-An automated native OMP attempt timed out with blank agent/status surfaces. Subsequent user device verification in a new remote OMP tab confirmed that the macOS workflow works end to end: the uploaded reference is inserted, and OMP processes the image after prompt submission, as on Linux. The automated attempt does not establish a remote-version incompatibility or a need to upgrade the remote service. Omarchy/Wayland verification includes native OMP insertion, progress, quiet dismissal and the first-use bytecode-triggered reload fix. Windows GUI verification remains pending. No passing Luau-LSP static-typecheck claim is made.
+An automated native OMP attempt timed out with blank agent/status surfaces. Subsequent user device verification in a new remote OMP tab confirmed that the macOS workflow works end to end: the uploaded reference is inserted, and OMP processes the image after prompt submission, as on Linux. The automated attempt does not establish a remote-version incompatibility or a need to upgrade the remote service. Omarchy/Wayland verification includes native OMP insertion, progress, quiet dismissal and the first-use bytecode-triggered reload fix. No passing Luau-LSP static-typecheck claim is made.
+
+On 2026-10-09, version 0.3.2 was installed from a local checkout on Windows 11 with Tern 0.6.3 and tested in an existing Ubuntu OMP 18.8.4 tab. The smoke check populated the real Windows `CF_HDROP` clipboard through System.Windows.Forms (the file-list format used by Explorer) with a generated PNG, then sent the default Ctrl+semicolon chord to the actual desktop window. The reference appeared in the original composer without submission, and the temporary panel closed. Local and remote SHA-256 matched; the uploaded file was `0600` and the upload directory `0700`. After a separate, explicit Enter, OMP read the PNG and correctly described its yellow circle with a black outline, green square and gradient background. A second shortcut invocation verified the exact host-address mapping and again left an unsubmitted draft. This verifies native clipboard-to-desktop-to-remote-OMP behavior, not automation of Explorer's Copy UI; no plugin code change was required.
 
 ## Commit email privacy
 
