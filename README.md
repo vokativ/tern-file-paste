@@ -62,9 +62,9 @@ In `auto` mode, Tern-recognized agent panes receive OMP `@"/remote/path"` refere
 Dependency examples:
 
 ```sh
-# macOS, if a sufficiently new Python is not already installed
+# macOS. `brew install python` provides `python3`. A versioned formula such as
+# `python@3.14` is also enough: the plugin finds `python3.14` itself.
 brew install python
-
 # Omarchy / Arch
 sudo pacman -S python openssh wl-clipboard
 # Add xclip only if using X11:
@@ -114,13 +114,22 @@ For example:
 
 The `hosts` key is the exact Tern host address (preferred) or its displayed name. `target` is an OpenSSH alias or `user@hostname`, without a port. IPv6 destinations can use an SSH config alias. Optional mapping fields: `port` (SSH port), `identity_file` (local private-key path), `timeout` (seconds), and `format` (`auto`, `omp`, `paths`). A top-level `timeout` supplies the default.
 
-Python defaults to `["python3"]` on macOS/Linux and `["py", "-3"]` on Windows. If Tern's GUI PATH finds an old Python or cannot find it, add an explicit top-level override, for example:
+On macOS the plugin does not launch `python3` from `PATH`. Tern started from the Dock does not inherit Homebrew's bin directory, and Apple's `/usr/bin/python3` is 3.9, which is too old. Each paste looks for an installed Python 3.10 or newer:
+
+- Homebrew, including a versioned formula that was never linked as `python3`: `/opt/homebrew/bin/python3.N`, `/usr/local/bin/python3.N`, and `opt/python@3.N` if the prefix symlink is absent. Only the default `python` formula creates the unversioned `python3` name ([Homebrew's link policy](https://github.com/Homebrew/homebrew-core/issues/149998)).
+- The python.org installer: `/Library/Frameworks/Python.framework/Versions/3.N/bin/python3`, plus its `/usr/local/bin/python3.N` symlink ([macOS install layout](https://docs.python.org/3/using/mac.html)).
+- MacPorts `/opt/local/bin/python3.N`.
+- pyenv, asdf, and uv under your home directory.
+
+The newest minor version wins. For the same version, a Homebrew prefix binary is preferred over the framework and over version managers. Linux keeps `python3` on `PATH`. Windows keeps the `py -3` launcher, and a missing absolute override can still find `%LOCALAPPDATA%\Programs\Python\Python3N\python.exe`.
+
+If the only Python found is too old, the error names that binary. Apple's `/usr/bin/python3` is called out as the Command Line Tools interpreter, not as a missing program. Install a current one with `brew install python`, then paste again.
+
+Set `python` only to force one interpreter. A path that exists and is Python 3.10+ is used as given. A missing path, including `/opt/homebrew/bin/python3`, is ignored when another 3.10+ install is found. A path that exists but is too old is reported instead of launched.
 
 ```json
-"python": ["/opt/homebrew/bin/python3"]
+"python": ["/opt/homebrew/bin/python3.14"]
 ```
-
-On Windows an installation without `py` can use `"python": ["python"]` or the full executable path. Do not include credentials in configuration; OpenSSH manages authentication.
 
 Configuration is read for each invocation. It is kept outside the repository and never uploaded to the remote host.
 

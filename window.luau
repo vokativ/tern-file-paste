@@ -244,6 +244,57 @@ local function configuration(host: ManagedHost): (any, { string }, string)
 		assert(type(argument) == "string" and argument ~= "", "python argv entries must be nonempty strings")
 		table.insert(argv, argument)
 	end
+	local requested = argv[1]
+	local function file_exists(path: string): boolean
+		local ok, found = pcall(function()
+			return tern.fs.exists(path)
+		end)
+		return ok and found == true
+	end
+	local function env(name: string): string
+		local ok, value = pcall(function()
+			return tern.getenv(name)
+		end)
+		if ok and type(value) == "string" then
+			return value
+		end
+		return ""
+	end
+	local requested_absolute = string.sub(requested, 1, 1) == "/" or string.match(requested, "^%a:[/\\]") ~= nil
+	local requested_exists = requested_absolute and file_exists(requested)
+	local requested_minor = if requested_exists then workflow.python_version(requested) else nil
+	local requested_too_old = requested_exists and ((tern.runtime.os == "macos" and requested == "/usr/bin/python3") or (requested_minor ~= nil and requested_minor < 10))
+	local candidates: { string } = {}
+	if requested_too_old or (not requested_exists and (tern.runtime.os == "macos" or requested_absolute)) then
+		local home = env("HOME")
+		if home == "" then
+			home = env("USERPROFILE")
+		end
+		local function collect(root: { dir: string, kind: string })
+			if not file_exists(root.dir) then
+				return
+			end
+			local ok, names = pcall(tern.fs.list, root.dir)
+			if not ok or type(names) ~= "table" then
+				return
+			end
+			for _, path in workflow.python_candidates(root.dir, root.kind, names) do
+				if file_exists(path) then
+					table.insert(candidates, path)
+				end
+			end
+		end
+		for _, root in workflow.python_search_roots(tern.runtime.os, home, env("LOCALAPPDATA")) do
+			collect(root)
+		end
+		if tern.runtime.os == "macos" and file_exists("/usr/bin/python3") then
+			table.insert(candidates, "/usr/bin/python3")
+		end
+	end
+	argv = workflow.resolve_python(argv, tern.runtime.os, requested_exists, candidates)
+	if argv[1] ~= requested then
+		tern.log.warn("Using discovered Python interpreter:", argv[1], "instead of", requested)
+	end
 	table.insert(argv, tern.plugin.dir .. "/helpers/paste_files.py")
 	return {
 		target = entry.target,

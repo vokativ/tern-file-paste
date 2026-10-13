@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.3
+
+- Find an installed Python 3.10+ on macOS instead of launching `python3` or `/opt/homebrew/bin/python3`. Versioned Homebrew formulae only provide `python3.N`, Tern's GUI PATH does not include Homebrew, and Apple's `/usr/bin/python3` is too old to use.
+- On macOS, name the Python that was found when it is too old, including Apple's `/usr/bin/python3`, and say to install a current one with `brew install python`.
+
 ## 0.3.2
 
 - Changed the Linux/Windows default from Ctrl+Shift+F8 to Ctrl+semicolon, avoiding laptop Fn requirements. Existing user overrides are preserved; macOS defaults are unchanged.
